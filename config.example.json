@@ -1,0 +1,29 @@
+{
+  "polling_interval_seconds": 300,
+  "threshold_margin_c": 0.0,
+  "slab_temp_c": null,
+  "stations": [
+    {
+      "code": "CYYZ"
+    },
+    {
+      "code": "KJFK"
+    }
+  ],
+  "notifier_config": {
+    "console": true,
+    "email": {
+      "smtp_host": "smtp.gmail.com",
+      "smtp_port": 587,
+      "smtp_user": "your-email@gmail.com",
+      "smtp_password": "your-app-password",
+      "from_address": "your-email@gmail.com",
+      "to_addresses": [
+        "alert@example.com"
+      ]
+    },
+    "webhooks": [
+      "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    ]
+  }
+}

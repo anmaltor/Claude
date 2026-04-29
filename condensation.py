@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Predict when condensation will form from weather conditions.
+
+Uses the Magnus-Tetens approximation to compute the dew point from air
+temperature and relative humidity. Condensation forms on a surface when the
+surface temperature is at or below the dew point of the surrounding air.
+
+Live observations can be pulled from any METAR-reporting station via the
+NOAA Aviation Weather API (e.g. CYYZ for Toronto Pearson).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+
+# Magnus-Tetens coefficients (Alduchov & Eskridge, 1996); valid for -40..50 C.
+_A = 17.625
+_B = 243.04
+
+
+def dew_point_c(temp_c: float, relative_humidity_pct: float) -> float:
+    """Return the dew point in degrees Celsius."""
+    if not 0 < relative_humidity_pct <= 100:
+        raise ValueError("relative humidity must be in (0, 100]")
+    from math import log
+
+    rh = relative_humidity_pct / 100.0
+    gamma = log(rh) + (_A * temp_c) / (_B + temp_c)
+    return (_B * gamma) / (_A - gamma)
+
+
+@dataclass(frozen=True)
+class CondensationForecast:
+    dew_point_c: float
+    will_condense: bool
+    margin_c: float  # surface_temp - dew_point; <=0 means condensation
+    form: str  # "none", "dew", "frost", or "fog"
+
+    def __str__(self) -> str:
+        return (
+            f"dew point: {self.dew_point_c:.1f} C\n"
+            f"margin:    {self.margin_c:+.1f} C\n"
+            f"condenses: {self.will_condense} ({self.form})"
+        )
+
+
+def relative_humidity_from_dew_point(temp_c: float, dew_point_c: float) -> float:
+    """Inverse of `dew_point_c`: derive RH (%) from temperature and dew point."""
+    from math import exp
+
+    e_t = exp((_A * temp_c) / (_B + temp_c))
+    e_td = exp((_A * dew_point_c) / (_B + dew_point_c))
+    return 100.0 * e_td / e_t
+
+
+_METAR_URL = "https://aviationweather.gov/api/data/metar?ids={station}&format=json&hours=1"
+
+# Defaults for ceramic floor tile over a concrete slab.
+# Conductivity ~1.3 W/mK, thickness ~10 mm, indoor convective coefficient ~8 W/m^2K.
+_DEFAULT_TILE_THICKNESS_M = 0.010
+_DEFAULT_TILE_CONDUCTIVITY = 1.3
+_DEFAULT_AIR_FILM_COEFFICIENT = 8.0
+
+
+def estimate_tile_floor_temp(
+    air_temp_c: float,
+    slab_temp_c: float,
+    *,
+    tile_thickness_m: float = _DEFAULT_TILE_THICKNESS_M,
+    tile_conductivity_w_mk: float = _DEFAULT_TILE_CONDUCTIVITY,
+    air_film_coefficient_w_m2k: float = _DEFAULT_AIR_FILM_COEFFICIENT,
+) -> float:
+    """Estimate the steady-state surface temperature of a tile floor on a slab.
+
+    Models the tile as a 1-D thermal resistor between the slab below (assumed
+    held at `slab_temp_c`) and the air above. The surface ends up close to the
+    slab when the slab is much more thermally massive than the convective
+    boundary layer -- which is the usual regime for ceramic tile in a station.
+    """
+    r_conv = 1.0 / air_film_coefficient_w_m2k
+    r_tile = tile_thickness_m / tile_conductivity_w_mk
+    weight_air = r_tile / (r_tile + r_conv)
+    return slab_temp_c + weight_air * (air_temp_c - slab_temp_c)
+
+
+
+def fetch_station_observation(station: str, timeout: float = 10.0) -> dict:
+    """Fetch the most recent METAR observation for `station` (ICAO code).
+
+    Returns a dict with at least `temp_c`, `dew_point_c`, `relative_humidity_pct`,
+    `observation_time`, and `raw` (the raw METAR string).
+    """
+    url = _METAR_URL.format(station=station.upper())
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            payload = json.loads(resp.read())
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise RuntimeError(f"could not reach aviation weather API: {e}") from e
+
+    if not payload:
+        raise RuntimeError(f"no recent METAR for station {station!r}")
+
+    obs = payload[0]
+    if obs.get("temp") is None or obs.get("dewp") is None:
+        raise RuntimeError(f"METAR for {station!r} is missing temp/dewp fields")
+
+    t = float(obs["temp"])
+    td = float(obs["dewp"])
+    return {
+        "temp_c": t,
+        "dew_point_c": td,
+        "relative_humidity_pct": relative_humidity_from_dew_point(t, td),
+        "observation_time": obs.get("reportTime") or obs.get("obsTime"),
+        "raw": obs.get("rawOb", ""),
+    }
+
+
+def predict(
+    air_temp_c: float,
+    relative_humidity_pct: float,
+    surface_temp_c: float | None = None,
+) -> CondensationForecast:
+    """Predict condensation given air temperature, RH, and a surface temperature.
+
+    If `surface_temp_c` is omitted, the air temperature is used (i.e. fog/cloud
+    formation when the air itself is saturated).
+    """
+    td = dew_point_c(air_temp_c, relative_humidity_pct)
+    target = air_temp_c if surface_temp_c is None else surface_temp_c
+    margin = target - td
+    will = margin <= 0
+
+    if not will:
+        form = "none"
+    elif surface_temp_c is None:
+        form = "fog"
+    elif target <= 0:
+        form = "frost"
+    else:
+        form = "dew"
+
+    return CondensationForecast(td, will, margin, form)
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+
+    # Manual prediction mode
+    p.add_argument("-t", "--temp", type=float, help="air temperature (C)")
+    p.add_argument("-r", "--rh", type=float, help="relative humidity (%%)")
+    p.add_argument("-s", "--surface", type=float, default=None, help="surface temperature (C)")
+    p.add_argument(
+        "--station",
+        help="ICAO station code to fetch live observations from (e.g. CYYZ)",
+    )
+    p.add_argument(
+        "--slab-temp",
+        type=float,
+        default=None,
+        help="slab/sub-floor temperature (C); estimates tile-surface temp when -s is not given",
+    )
+
+    # Automation mode
+    p.add_argument(
+        "--monitor",
+        action="store_true",
+        help="run event-driven monitoring mode (requires --config)",
+    )
+    p.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="JSON configuration file for monitoring mode (used with --monitor)",
+    )
+    p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="enable verbose logging in monitoring mode",
+    )
+
+    args = p.parse_args()
+
+    # Validation
+    if args.monitor:
+        if args.config is None:
+            p.error("--monitor mode requires --config <file>")
+    else:
+        if args.station is None and (args.temp is None or args.rh is None):
+            p.error("either --station, or both --temp and --rh, must be provided")
+        if args.surface is not None and args.slab_temp is not None:
+            p.error("pass either --surface (measured) or --slab-temp (estimate), not both")
+    return args
+
+
+def main() -> None:
+    args = _parse_args()
+
+    if args.monitor:
+        # Monitoring/automation mode
+        from monitor import run_monitor
+        run_monitor(args.config, verbose=args.verbose)
+    else:
+        # Manual prediction mode
+        if args.station is not None:
+            obs = fetch_station_observation(args.station)
+            print(f"station:   {args.station.upper()} @ {obs['observation_time']}")
+            print(f"observed:  {obs['temp_c']:.1f} C / {obs['relative_humidity_pct']:.0f}% RH")
+            if obs["raw"]:
+                print(f"raw METAR: {obs['raw']}")
+            temp = obs["temp_c"]
+            rh = obs["relative_humidity_pct"]
+        else:
+            temp = args.temp
+            rh = args.rh
+
+        surface = args.surface
+        if surface is None and args.slab_temp is not None:
+            surface = estimate_tile_floor_temp(temp, args.slab_temp)
+            print(f"slab:      {args.slab_temp:.1f} C")
+            print(f"tile est.: {surface:.1f} C  (ceramic over concrete, steady-state)")
+
+        print(predict(temp, rh, surface))
+
+
+if __name__ == "__main__":
+    main()
