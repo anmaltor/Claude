@@ -13,6 +13,7 @@ from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from condensation import fetch_station_observation, predict, estimate_tile_floor_temp
+from forecast import analyze_forecast
 
 
 def get_risk_indicator(margin_c: float) -> str:
@@ -80,6 +81,30 @@ def send_status_report(config_path: str) -> None:
     report += "Threshold: " + str(config.get("threshold_margin_c", 0.0)) + "C\n"
     if config.get("slab_temp_c"):
         report += "Slab Temp: " + str(config.get("slab_temp_c")) + "C\n"
+
+    # Add 7-day forecast
+    report += f"\n{'=' * 50}\n"
+    report += "7-DAY CONDENSATION FORECAST\n"
+    report += f"{'=' * 50}\n"
+
+    forecast_data = analyze_forecast(config, days=7)
+    if "error" not in forecast_data:
+        for date in sorted(forecast_data.keys())[:7]:
+            day_data = forecast_data[date]
+            day_name = datetime.strptime(date, "%Y-%m-%d").strftime("%A")
+
+            if day_data["hours_at_risk"] == 0:
+                risk_level = "GREEN"
+            elif day_data["hours_at_risk"] <= 6:
+                risk_level = "YELLOW"
+            else:
+                risk_level = "RED"
+
+            report += f"\n{day_name} ({date}): {risk_level}\n"
+            report += f"  Temp: {day_data['min_temp']:5.1f}C - {day_data['max_temp']:5.1f}C\n"
+            report += f"  Risk hours: {day_data['hours_at_risk']}\n"
+    else:
+        report += f"Forecast unavailable\n"
     
     # Send email if configured
     email_config = config.get("notifier_config", {}).get("email", {})
