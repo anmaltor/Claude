@@ -1,6 +1,20 @@
 {
   "polling_interval_seconds": 300,
   "threshold_margin_c": 0.0,
+  "seasonal_thresholds": {
+    "january": 0.0,
+    "february": 0.0,
+    "march": 0.0,
+    "april": 0.0,
+    "may": 0.5,
+    "june": 1.0,
+    "july": 1.0,
+    "august": 1.0,
+    "september": 0.5,
+    "october": 0.0,
+    "november": 0.0,
+    "december": 0.0
+  },
   "stations": [
     {"code": "CYYZ"},
     {"code": "CYPA"}

@@ -21,6 +21,20 @@ class Config:
         "threshold_margin_c": 0.0,  # Alert at/below dew point
         "slab_temp_c": None,  # If set, estimate tile surface temp
         "stations": [],
+        "seasonal_thresholds": {
+            "january": 0.0,
+            "february": 0.0,
+            "march": 0.0,
+            "april": 0.0,
+            "may": 0.5,
+            "june": 1.0,
+            "july": 1.0,
+            "august": 1.0,
+            "september": 0.5,
+            "october": 0.0,
+            "november": 0.0,
+            "december": 0.0,
+        },
         "notifier_config": {
             "console": True,
             "email": {},
@@ -115,6 +129,36 @@ class Config:
                 config[key] = value
 
         return config
+
+    @staticmethod
+    def get_threshold_for_month(config: dict, month: int = None) -> float:
+        """Get alert threshold for current (or specified) month.
+
+        Args:
+            config: Configuration dict
+            month: Month number (1-12). If None, uses current month.
+
+        Returns:
+            Alert threshold in degrees Celsius
+        """
+        import datetime
+
+        if month is None:
+            month = datetime.datetime.now().month
+
+        month_names = [
+            "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december"
+        ]
+
+        if 1 <= month <= 12:
+            month_name = month_names[month - 1]
+            seasonal = config.get("seasonal_thresholds", {})
+            if month_name in seasonal:
+                return seasonal[month_name]
+
+        # Fallback to default threshold
+        return config.get("threshold_margin_c", 0.0)
 
     @staticmethod
     def validate(config: dict) -> tuple[bool, list[str]]:

@@ -145,9 +145,12 @@ class MonitoringService:
         # Initialize station monitors
         for station_cfg in config.get("stations", []):
             code = station_cfg["code"]
+            # Get seasonal threshold (updates based on current month)
+            from config import Config
+            threshold = Config.get_threshold_for_month(config)
             monitor = StationMonitor(
                 station_code=code,
-                threshold_margin_c=config.get("threshold_margin_c", 0.0),
+                threshold_margin_c=threshold,
                 slab_temp_c=config.get("slab_temp_c"),
                 notifier=self.notifier,
             )
