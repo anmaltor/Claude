@@ -4,11 +4,17 @@
 Uses the Magnus-Tetens approximation to compute the dew point from air
 temperature and relative humidity. Condensation forms on a surface when the
 surface temperature is at or below the dew point of the surrounding air.
+
+Live observations can be pulled from any METAR-reporting station via the
+NOAA Aviation Weather API (e.g. CYYZ for Toronto Pearson).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 
 # Magnus-Tetens coefficients (Alduchov & Eskridge, 1996); valid for -40..50 C.
@@ -42,6 +48,49 @@ class CondensationForecast:
         )
 
 
+def relative_humidity_from_dew_point(temp_c: float, dew_point_c: float) -> float:
+    """Inverse of `dew_point_c`: derive RH (%) from temperature and dew point."""
+    from math import exp
+
+    e_t = exp((_A * temp_c) / (_B + temp_c))
+    e_td = exp((_A * dew_point_c) / (_B + dew_point_c))
+    return 100.0 * e_td / e_t
+
+
+_METAR_URL = "https://aviationweather.gov/api/data/metar?ids={station}&format=json&hours=1"
+
+
+def fetch_station_observation(station: str, timeout: float = 10.0) -> dict:
+    """Fetch the most recent METAR observation for `station` (ICAO code).
+
+    Returns a dict with at least `temp_c`, `dew_point_c`, `relative_humidity_pct`,
+    `observation_time`, and `raw` (the raw METAR string).
+    """
+    url = _METAR_URL.format(station=station.upper())
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            payload = json.loads(resp.read())
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise RuntimeError(f"could not reach aviation weather API: {e}") from e
+
+    if not payload:
+        raise RuntimeError(f"no recent METAR for station {station!r}")
+
+    obs = payload[0]
+    if obs.get("temp") is None or obs.get("dewp") is None:
+        raise RuntimeError(f"METAR for {station!r} is missing temp/dewp fields")
+
+    t = float(obs["temp"])
+    td = float(obs["dewp"])
+    return {
+        "temp_c": t,
+        "dew_point_c": td,
+        "relative_humidity_pct": relative_humidity_from_dew_point(t, td),
+        "observation_time": obs.get("reportTime") or obs.get("obsTime"),
+        "raw": obs.get("rawOb", ""),
+    }
+
+
 def predict(
     air_temp_c: float,
     relative_humidity_pct: float,
@@ -71,15 +120,33 @@ def predict(
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("-t", "--temp", type=float, required=True, help="air temperature (C)")
-    p.add_argument("-r", "--rh", type=float, required=True, help="relative humidity (%%)")
+    p.add_argument("-t", "--temp", type=float, help="air temperature (C)")
+    p.add_argument("-r", "--rh", type=float, help="relative humidity (%%)")
     p.add_argument("-s", "--surface", type=float, default=None, help="surface temperature (C)")
-    return p.parse_args()
+    p.add_argument(
+        "--station",
+        help="ICAO station code to fetch live observations from (e.g. CYYZ)",
+    )
+    args = p.parse_args()
+    if args.station is None and (args.temp is None or args.rh is None):
+        p.error("either --station, or both --temp and --rh, must be provided")
+    return args
 
 
 def main() -> None:
     args = _parse_args()
-    print(predict(args.temp, args.rh, args.surface))
+    if args.station is not None:
+        obs = fetch_station_observation(args.station)
+        print(f"station:   {args.station.upper()} @ {obs['observation_time']}")
+        print(f"observed:  {obs['temp_c']:.1f} C / {obs['relative_humidity_pct']:.0f}% RH")
+        if obs["raw"]:
+            print(f"raw METAR: {obs['raw']}")
+        temp = obs["temp_c"]
+        rh = obs["relative_humidity_pct"]
+    else:
+        temp = args.temp
+        rh = args.rh
+    print(predict(temp, rh, args.surface))
 
 
 if __name__ == "__main__":
