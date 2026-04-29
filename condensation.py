@@ -59,6 +59,34 @@ def relative_humidity_from_dew_point(temp_c: float, dew_point_c: float) -> float
 
 _METAR_URL = "https://aviationweather.gov/api/data/metar?ids={station}&format=json&hours=1"
 
+# Defaults for ceramic floor tile over a concrete slab.
+# Conductivity ~1.3 W/mK, thickness ~10 mm, indoor convective coefficient ~8 W/m^2K.
+_DEFAULT_TILE_THICKNESS_M = 0.010
+_DEFAULT_TILE_CONDUCTIVITY = 1.3
+_DEFAULT_AIR_FILM_COEFFICIENT = 8.0
+
+
+def estimate_tile_floor_temp(
+    air_temp_c: float,
+    slab_temp_c: float,
+    *,
+    tile_thickness_m: float = _DEFAULT_TILE_THICKNESS_M,
+    tile_conductivity_w_mk: float = _DEFAULT_TILE_CONDUCTIVITY,
+    air_film_coefficient_w_m2k: float = _DEFAULT_AIR_FILM_COEFFICIENT,
+) -> float:
+    """Estimate the steady-state surface temperature of a tile floor on a slab.
+
+    Models the tile as a 1-D thermal resistor between the slab below (assumed
+    held at `slab_temp_c`) and the air above. The surface ends up close to the
+    slab when the slab is much more thermally massive than the convective
+    boundary layer -- which is the usual regime for ceramic tile in a station.
+    """
+    r_conv = 1.0 / air_film_coefficient_w_m2k
+    r_tile = tile_thickness_m / tile_conductivity_w_mk
+    weight_air = r_tile / (r_tile + r_conv)
+    return slab_temp_c + weight_air * (air_temp_c - slab_temp_c)
+
+
 
 def fetch_station_observation(station: str, timeout: float = 10.0) -> dict:
     """Fetch the most recent METAR observation for `station` (ICAO code).
@@ -127,9 +155,17 @@ def _parse_args() -> argparse.Namespace:
         "--station",
         help="ICAO station code to fetch live observations from (e.g. CYYZ)",
     )
+    p.add_argument(
+        "--slab-temp",
+        type=float,
+        default=None,
+        help="slab/sub-floor temperature (C); estimates tile-surface temp when -s is not given",
+    )
     args = p.parse_args()
     if args.station is None and (args.temp is None or args.rh is None):
         p.error("either --station, or both --temp and --rh, must be provided")
+    if args.surface is not None and args.slab_temp is not None:
+        p.error("pass either --surface (measured) or --slab-temp (estimate), not both")
     return args
 
 
@@ -146,7 +182,14 @@ def main() -> None:
     else:
         temp = args.temp
         rh = args.rh
-    print(predict(temp, rh, args.surface))
+
+    surface = args.surface
+    if surface is None and args.slab_temp is not None:
+        surface = estimate_tile_floor_temp(temp, args.slab_temp)
+        print(f"slab:      {args.slab_temp:.1f} C")
+        print(f"tile est.: {surface:.1f} C  (ceramic over concrete, steady-state)")
+
+    print(predict(temp, rh, surface))
 
 
 if __name__ == "__main__":
