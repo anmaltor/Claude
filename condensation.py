@@ -148,6 +148,8 @@ def predict(
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+
+    # Manual prediction mode
     p.add_argument("-t", "--temp", type=float, help="air temperature (C)")
     p.add_argument("-r", "--rh", type=float, help="relative humidity (%%)")
     p.add_argument("-s", "--surface", type=float, default=None, help="surface temperature (C)")
@@ -161,35 +163,67 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="slab/sub-floor temperature (C); estimates tile-surface temp when -s is not given",
     )
+
+    # Automation mode
+    p.add_argument(
+        "--monitor",
+        action="store_true",
+        help="run event-driven monitoring mode (requires --config)",
+    )
+    p.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="JSON configuration file for monitoring mode (used with --monitor)",
+    )
+    p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="enable verbose logging in monitoring mode",
+    )
+
     args = p.parse_args()
-    if args.station is None and (args.temp is None or args.rh is None):
-        p.error("either --station, or both --temp and --rh, must be provided")
-    if args.surface is not None and args.slab_temp is not None:
-        p.error("pass either --surface (measured) or --slab-temp (estimate), not both")
+
+    # Validation
+    if args.monitor:
+        if args.config is None:
+            p.error("--monitor mode requires --config <file>")
+    else:
+        if args.station is None and (args.temp is None or args.rh is None):
+            p.error("either --station, or both --temp and --rh, must be provided")
+        if args.surface is not None and args.slab_temp is not None:
+            p.error("pass either --surface (measured) or --slab-temp (estimate), not both")
     return args
 
 
 def main() -> None:
     args = _parse_args()
-    if args.station is not None:
-        obs = fetch_station_observation(args.station)
-        print(f"station:   {args.station.upper()} @ {obs['observation_time']}")
-        print(f"observed:  {obs['temp_c']:.1f} C / {obs['relative_humidity_pct']:.0f}% RH")
-        if obs["raw"]:
-            print(f"raw METAR: {obs['raw']}")
-        temp = obs["temp_c"]
-        rh = obs["relative_humidity_pct"]
+
+    if args.monitor:
+        # Monitoring/automation mode
+        from monitor import run_monitor
+        run_monitor(args.config, verbose=args.verbose)
     else:
-        temp = args.temp
-        rh = args.rh
+        # Manual prediction mode
+        if args.station is not None:
+            obs = fetch_station_observation(args.station)
+            print(f"station:   {args.station.upper()} @ {obs['observation_time']}")
+            print(f"observed:  {obs['temp_c']:.1f} C / {obs['relative_humidity_pct']:.0f}% RH")
+            if obs["raw"]:
+                print(f"raw METAR: {obs['raw']}")
+            temp = obs["temp_c"]
+            rh = obs["relative_humidity_pct"]
+        else:
+            temp = args.temp
+            rh = args.rh
 
-    surface = args.surface
-    if surface is None and args.slab_temp is not None:
-        surface = estimate_tile_floor_temp(temp, args.slab_temp)
-        print(f"slab:      {args.slab_temp:.1f} C")
-        print(f"tile est.: {surface:.1f} C  (ceramic over concrete, steady-state)")
+        surface = args.surface
+        if surface is None and args.slab_temp is not None:
+            surface = estimate_tile_floor_temp(temp, args.slab_temp)
+            print(f"slab:      {args.slab_temp:.1f} C")
+            print(f"tile est.: {surface:.1f} C  (ceramic over concrete, steady-state)")
 
-    print(predict(temp, rh, surface))
+        print(predict(temp, rh, surface))
 
 
 if __name__ == "__main__":
