@@ -2,7 +2,8 @@
   "polling_interval_seconds": 300,
   "threshold_margin_c": 0.0,
   "stations": [
-    {"code": "CYYZ"}
+    {"code": "CYYZ"},
+    {"code": "CYPA"}
   ],
   "notifier_config": {
     "console": true,
