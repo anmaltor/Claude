@@ -128,11 +128,14 @@ def predict(
 
     If `surface_temp_c` is omitted, the air temperature is used (i.e. fog/cloud
     formation when the air itself is saturated).
+
+    Note: Margin tolerance of +0.5C accounts for weather measurement uncertainty
+    (±0.5% RH) and underground station microclimate differences vs. airport data.
     """
     td = dew_point_c(air_temp_c, relative_humidity_pct)
     target = air_temp_c if surface_temp_c is None else surface_temp_c
     margin = target - td
-    will = margin <= 0
+    will = margin <= 0.5  # tolerance: catches near-saturation conditions
 
     if not will:
         form = "none"
