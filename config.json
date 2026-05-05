@@ -21,13 +21,6 @@
   ],
   "notifier_config": {
     "console": true,
-    "email": {
-      "smtp_host": "smtp.gmail.com",
-      "smtp_port": 587,
-      "smtp_user": "antonio.malloltorralbo@gmail.com",
-      "smtp_password": "gvtacmtdepyyvuup",
-      "from_address": "Condensation Monitor <antonio.malloltorralbo@gmail.com>",
-      "to_addresses": ["antonio.malloltorralbo@gmail.com"]
-    }
+    "email": {}
   }
 }
