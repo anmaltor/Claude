@@ -1,0 +1,61 @@
+﻿CONDENSATION STATUS REPORT
+2026-05-10 10:28:49
+==================================================
+
+CYYZ (2026-05-10T14:00:00.000Z)
+--------------------------------------------------
+Temperature:        10.0C
+Dew Point:          -2.0C
+Humidity:           43.1%
+Margin:            +12.0C
+
+Surface Temp:       10.0C
+Condensation:     NONE
+Risk Level:       GREEN - SAFE
+
+CYPA (2026-05-10T14:00:00.000Z)
+--------------------------------------------------
+Temperature:         5.0C
+Dew Point:           0.0C
+Humidity:           70.1%
+Margin:             +5.0C
+
+Surface Temp:        5.0C
+Condensation:     NONE
+Risk Level:       YELLOW - CAUTION
+
+==================================================
+Threshold: 0.0C
+
+==================================================
+7-DAY CONDENSATION FORECAST
+==================================================
+
+Sunday (2026-05-10): GREEN
+  Temp:   4.3C -  13.9C
+  Risk hours: 0
+
+Monday (2026-05-11): GREEN
+  Temp:   2.9C -  11.6C
+  Risk hours: 0
+
+Tuesday (2026-05-12): GREEN
+  Temp:   1.1C -  13.0C
+  Risk hours: 0
+
+Wednesday (2026-05-13): GREEN
+  Temp:   6.2C -  16.1C
+  Risk hours: 0
+
+Thursday (2026-05-14): GREEN
+  Temp:   6.2C -  10.1C
+  Risk hours: 0
+
+Friday (2026-05-15): YELLOW
+  Temp:   4.2C -  15.9C
+  Risk hours: 3
+
+Saturday (2026-05-16): RED
+  Temp:   9.7C -  17.0C
+  Risk hours: 12
+
