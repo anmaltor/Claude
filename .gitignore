@@ -1,2 +1,6 @@
 __pycache__/
 *.py[cod]
+
+# Local runtime config may contain SMTP credentials / webhook secrets.
+# Generate from the template: python3 config.py example > config.json
+config.json
